@@ -1399,9 +1399,54 @@ export function generateStandaloneHtml(): string {
 
     // Keyboard shortcuts
     window.addEventListener('keydown', (e) => {
+      const isInputFocused = ['INPUT', 'TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable;
+      if (isInputFocused) return;
+
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
-        if (!['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
-          deleteSelectedElement();
+        e.preventDefault();
+        deleteSelectedElement();
+        return;
+      }
+      if (e.key === 'Escape') {
+        deselectAll();
+        return;
+      }
+
+      const isArrow = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
+      if (selectedId && isArrow) {
+        const target = elements.find(el => el.id === selectedId);
+        if (!target) return;
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        if (e.key === 'ArrowUp') target.y = Math.max(0, target.y - step);
+        if (e.key === 'ArrowDown') target.y = target.y + step;
+        if (e.key === 'ArrowLeft') target.x = Math.max(0, target.x - step);
+        if (e.key === 'ArrowRight') target.x = target.x + step;
+        renderElements();
+        return;
+      }
+
+      if (!selectedId) {
+        const container = document.getElementById('canvas-container');
+        if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+          e.preventDefault();
+          if (currentPage > 1) { currentPage--; renderPage(); }
+          return;
+        }
+        if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+          e.preventDefault();
+          if (currentPage < totalPages) { currentPage++; renderPage(); }
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (container) container.scrollBy({ top: -75, behavior: 'smooth' });
+          return;
+        }
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (container) container.scrollBy({ top: 75, behavior: 'smooth' });
+          return;
         }
       }
     });
