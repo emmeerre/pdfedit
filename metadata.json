@@ -1,0 +1,6 @@
+{
+  "name": "PDF Studio Standalone",
+  "description": "Editor PDF offline e standalone per aggiungere campi modulo, firme, testi e immagini con doppio click senza server.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
