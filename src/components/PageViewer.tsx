@@ -5,23 +5,13 @@ import { RotateCw, Edit3, Trash2, FlipHorizontal, Upload } from 'lucide-react';
 import { detectPdfFont, getCssFontFamily } from '../utils/fontHelper';
 import { extractImagesFromPdfPage } from '../utils/pdfImageExtractor';
 
-// Configure matching local worker with robust URL resolution across domains and GitHub Pages subpaths
-export function getPdfWorkerUrl(): string {
-  if (typeof window === 'undefined') return '';
-  try {
-    let pathname = window.location.pathname;
-    if (!pathname.endsWith('/') && !pathname.endsWith('.html')) {
-      pathname += '/';
-    }
-    return new URL('pdf.worker.min.mjs', window.location.origin + pathname).href;
-  } catch {
-    return './pdf.worker.min.mjs';
-  }
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
+
+// Configure worker with Vite-resolved URL, with fallback to local public worker
+if (typeof window !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker || './pdf.worker.mjs';
 }
 
-if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = getPdfWorkerUrl();
-}
 interface PageViewerProps {
   pdfBytes: Uint8Array | null;
   currentPage: number;
@@ -124,6 +114,9 @@ export const PageViewer: React.FC<PageViewerProps> = ({
       }
 
       try {
+        if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker || './pdf.worker.mjs';
+        }
         // Use a slice clone of the buffer so the original ArrayBuffer is never detached by PDF.js
         const loadingTask = pdfjsLib.getDocument({ data: pdfBytes.slice() });
         const pdf = await loadingTask.promise;
@@ -606,7 +599,10 @@ export const PageViewer: React.FC<PageViewerProps> = ({
   const pageElements = elements.filter((el) => el.pageIndex === currentPage - 1);
 
   return (
-    <div className="flex-1 overflow-auto bg-slate-200/90 p-8 flex justify-center items-start min-h-0">
+    <div
+      id="pdf-viewer-scroll-container"
+      className="flex-1 overflow-auto bg-slate-200/90 p-8 flex justify-center items-start min-h-0"
+    >
       <div
         ref={containerRef}
         onClick={handleContainerClick}
