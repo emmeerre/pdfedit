@@ -5,11 +5,23 @@ import { RotateCw, Edit3, Trash2, FlipHorizontal, Upload } from 'lucide-react';
 import { detectPdfFont, getCssFontFamily } from '../utils/fontHelper';
 import { extractImagesFromPdfPage } from '../utils/pdfImageExtractor';
 
-// Configure matching local worker from public directory
-if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+// Configure matching local worker with robust URL resolution across domains and GitHub Pages subpaths
+export function getPdfWorkerUrl(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    let pathname = window.location.pathname;
+    if (!pathname.endsWith('/') && !pathname.endsWith('.html')) {
+      pathname += '/';
+    }
+    return new URL('pdf.worker.min.mjs', window.location.origin + pathname).href;
+  } catch {
+    return './pdf.worker.min.mjs';
+  }
 }
 
+if (typeof window !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = getPdfWorkerUrl();
+}
 interface PageViewerProps {
   pdfBytes: Uint8Array | null;
   currentPage: number;
