@@ -365,24 +365,145 @@ export default function App() {
     showToast('Elemento duplicato');
   };
 
-  // Keyboard shortcut delete
+  // Keyboard shortcuts: fine-movement of selected elements, delete, page change and page scrolling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        (e.key === 'Delete' || e.key === 'Backspace') &&
-        selectedId &&
-        !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)
-      ) {
+      // Don't intercept if user is typing in an input, textarea or contentEditable
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      const isInputFocused =
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(targetTag) ||
+        (e.target as HTMLElement)?.isContentEditable;
+
+      if (isInputFocused) return;
+
+      // 1. DELETE / BACKSPACE: delete selected element
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
         e.preventDefault();
         handleDeleteElement(selectedId);
-      } else if (e.key === 'Escape') {
+        return;
+      }
+
+      // 2. ESCAPE: deselect element and reset tool
+      if (e.key === 'Escape') {
         setSelectedId(null);
         setCurrentTool('select');
+        return;
+      }
+
+      const isArrowKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
+      const isPageKey = ['PageUp', 'PageDown', 'Home', 'End'].includes(e.key);
+
+      // CASE A: A field/element IS SELECTED -> Nudge / Fine-tune movement with Arrow keys
+      if (selectedId && isArrowKey) {
+        const target = elements.find((el) => el.id === selectedId);
+        if (!target) return;
+
+        e.preventDefault();
+        // Fine movement: 1px by default, 10px if holding Shift
+        const step = e.shiftKey ? 10 : 1;
+        let nextX = target.x;
+        let nextY = target.y;
+
+        if (e.key === 'ArrowUp') nextY = Math.max(0, target.y - step);
+        if (e.key === 'ArrowDown') nextY = target.y + step;
+        if (e.key === 'ArrowLeft') nextX = Math.max(0, target.x - step);
+        if (e.key === 'ArrowRight') nextX = target.x + step;
+
+        handleUpdateElement({
+          ...target,
+          x: nextX,
+          y: nextY,
+        });
+        return;
+      }
+
+      // CASE B: NOTHING IS SELECTED -> Page change and Page movement
+      if (!selectedId && (isArrowKey || isPageKey)) {
+        const scrollContainer = document.getElementById('pdf-viewer-scroll-container');
+
+        // Page changing with ArrowLeft / ArrowRight or PageUp / PageDown
+        if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+          e.preventDefault();
+          if (currentPage > 1) {
+            setCurrentPage((p) => p - 1);
+            showToast(`Pagina ${currentPage - 1} di ${totalPages}`);
+          }
+          return;
+        }
+
+        if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+          e.preventDefault();
+          if (currentPage < totalPages) {
+            setCurrentPage((p) => p + 1);
+            showToast(`Pagina ${currentPage + 1} di ${totalPages}`);
+          }
+          return;
+        }
+
+        if (e.key === 'Home') {
+          e.preventDefault();
+          if (scrollContainer) scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+          if (currentPage !== 1) {
+            setCurrentPage(1);
+            showToast(`Pagina 1 di ${totalPages}`);
+          }
+          return;
+        }
+
+        if (e.key === 'End') {
+          e.preventDefault();
+          if (currentPage !== totalPages) {
+            setCurrentPage(totalPages);
+            showToast(`Pagina ${totalPages} di ${totalPages}`);
+          }
+          if (scrollContainer) scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
+          return;
+        }
+
+        // Page movement / scrolling with ArrowUp / ArrowDown
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (scrollContainer) {
+            const isAtTop = scrollContainer.scrollTop <= 5;
+            if (isAtTop && currentPage > 1) {
+              // Boundary reached: go to previous page and scroll to its bottom
+              setCurrentPage((p) => p - 1);
+              showToast(`Pagina ${currentPage - 1} di ${totalPages}`);
+              setTimeout(() => {
+                scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'auto' });
+              }, 50);
+            } else {
+              // Smoothly move/scroll page up
+              scrollContainer.scrollBy({ top: -75, behavior: 'smooth' });
+            }
+          }
+          return;
+        }
+
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (scrollContainer) {
+            const isAtBottom =
+              scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight <= 5;
+            if (isAtBottom && currentPage < totalPages) {
+              // Boundary reached: go to next page and scroll to its top
+              setCurrentPage((p) => p + 1);
+              showToast(`Pagina ${currentPage + 1} di ${totalPages}`);
+              setTimeout(() => {
+                scrollContainer.scrollTo({ top: 0, behavior: 'auto' });
+              }, 50);
+            } else {
+              // Smoothly move/scroll page down
+              scrollContainer.scrollBy({ top: 75, behavior: 'smooth' });
+            }
+          }
+          return;
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId]);
+  }, [selectedId, elements, currentPage, totalPages]);
 
   const selectedElement = elements.find((el) => el.id === selectedId) || null;
 
