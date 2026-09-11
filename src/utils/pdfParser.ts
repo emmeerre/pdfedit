@@ -122,16 +122,16 @@ export async function parsePdfElements(bytes: Uint8Array): Promise<EditorElement
           );
 
           extracted.push({
-            id: `ch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            id: `dd_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
             pageIndex: pIndex,
-            type: 'text_field',
+            type: 'dropdown',
             fieldName: fieldName,
+            options: options.length > 0 ? options : ['Opzione 1', 'Opzione 2'],
             defaultValue: annot.fieldValue ? String(annot.fieldValue) : options[0] || '',
             fontSize: 11,
             fontColor: '#0f172a',
             borderColor: '#94a3b8',
-            backgroundColor: 'rgba(239, 246, 255, 0.9)',
-            isMultiline: false,
+            backgroundColor: '#ffffff',
             isRequired: false,
             x,
             y,

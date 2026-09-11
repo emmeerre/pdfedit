@@ -340,6 +340,80 @@ export async function exportPdfWithElements(
         break;
       }
 
+      case 'dropdown': {
+        const options = (el.options && el.options.length > 0) ? el.options : ['Opzione 1', 'Opzione 2'];
+        const selectedVal = el.defaultValue || options[0] || '';
+
+        if (mode === 'interactive') {
+          try {
+            const fieldName = el.fieldName || `Dropdown_${el.id}`;
+            let dropdown;
+            try {
+              dropdown = form.getDropdown(fieldName);
+            } catch {
+              dropdown = form.createDropdown(fieldName);
+            }
+            if (dropdown) {
+              dropdown.addOptions(options);
+              if (selectedVal && options.includes(selectedVal)) {
+                dropdown.select(selectedVal);
+              }
+              dropdown.addToPage(page, {
+                x: pdfX,
+                y: pdfY,
+                width: pdfWidth,
+                height: pdfHeight,
+                textColor: parseHexColor(el.fontColor || '#0f172a', 0.1, 0.1, 0.1),
+                backgroundColor: parseHexColor(el.backgroundColor || '#ffffff', 1, 1, 1),
+                borderColor: parseHexColor(el.borderColor || '#3b82f6', 0.2, 0.5, 0.9),
+                borderWidth: 1,
+                rotate: rot,
+              });
+            }
+          } catch (err) {
+            console.warn('Fallback dropdown render:', err);
+          }
+        } else {
+          // Flattened mode: draw rectangular field with text and arrow
+          page.drawRectangle({
+            x: pdfX,
+            y: pdfY,
+            width: pdfWidth,
+            height: pdfHeight,
+            borderColor: parseHexColor(el.borderColor || '#cbd5e1', 0.8, 0.8, 0.85),
+            borderWidth: 1,
+            color: parseHexColor(el.backgroundColor || '#ffffff', 1, 1, 1),
+            rotate: rot,
+          });
+          if (selectedVal) {
+            page.drawText(selectedVal, {
+              x: pdfX + 6,
+              y: pdfY + (pdfHeight - (el.fontSize || 10)) / 2 + 1,
+              size: el.fontSize || 10,
+              font: helveticaFont,
+              color: parseHexColor(el.fontColor || '#0f172a', 0.1, 0.1, 0.1),
+              rotate: rot,
+            });
+          }
+          // Small chevron down icon
+          const arrowX = pdfX + pdfWidth - 12;
+          const arrowY = pdfY + pdfHeight / 2;
+          page.drawLine({
+            start: { x: arrowX - 4, y: arrowY + 2 },
+            end: { x: arrowX, y: arrowY - 2 },
+            thickness: 1.2,
+            color: rgb(0.4, 0.4, 0.4),
+          });
+          page.drawLine({
+            start: { x: arrowX, y: arrowY - 2 },
+            end: { x: arrowX + 4, y: arrowY + 2 },
+            thickness: 1.2,
+            color: rgb(0.4, 0.4, 0.4),
+          });
+        }
+        break;
+      }
+
       case 'signature':
       case 'image': {
         try {
@@ -415,6 +489,81 @@ export async function exportPdfWithElements(
           }
         } catch (err) {
           console.error('Error embedding signature/image:', err);
+        }
+        break;
+      }
+
+      case 'shape': {
+        const rotDeg = el.rotation || 0;
+        const drawCoords = getRotatedDrawCoords(pdfX, pdfY, pdfWidth, pdfHeight, rotDeg);
+
+        // If it was an original decoration from the PDF, erase the original location
+        if (el.isOriginalPdfDecoration) {
+          const origX = el.originalX ?? el.x;
+          const origY = el.originalY ?? el.y;
+          const origW = el.originalWidth ?? el.width;
+          const origH = el.originalHeight ?? el.height;
+          const origPdfY = pageHeight - origY - origH;
+          const origRotDeg = el.originalRotation || 0;
+          const origDrawCoords = getRotatedDrawCoords(origX, origPdfY, origW, origH, origRotDeg);
+
+          page.drawRectangle({
+            x: origDrawCoords.x,
+            y: origDrawCoords.y,
+            width: origW,
+            height: origH,
+            color: rgb(1, 1, 1),
+            rotate: degrees(origRotDeg),
+          });
+        }
+
+        const strokeCol = parseHexColor(el.strokeColor || '#334155', 0.2, 0.25, 0.35);
+        const strokeW = el.strokeWidth !== undefined ? el.strokeWidth : 1;
+        const hasFill = el.fillColor && el.fillColor !== 'transparent';
+        const fillCol = hasFill ? parseHexColor(el.fillColor, 1, 1, 1) : undefined;
+
+        if (el.shapeType === 'line') {
+          const isHorizontal = pdfHeight <= pdfWidth;
+          if (isHorizontal) {
+            page.drawLine({
+              start: { x: drawCoords.x, y: drawCoords.y + pdfHeight / 2 },
+              end: { x: drawCoords.x + pdfWidth, y: drawCoords.y + pdfHeight / 2 },
+              thickness: strokeW || 1,
+              color: strokeCol,
+            });
+          } else {
+            page.drawLine({
+              start: { x: drawCoords.x + pdfWidth / 2, y: drawCoords.y },
+              end: { x: drawCoords.x + pdfWidth / 2, y: drawCoords.y + pdfHeight },
+              thickness: strokeW || 1,
+              color: strokeCol,
+            });
+          }
+        } else if (el.shapeType === 'circle') {
+          const rx = pdfWidth / 2;
+          const ry = pdfHeight / 2;
+          page.drawEllipse({
+            x: drawCoords.x + rx,
+            y: drawCoords.y + ry,
+            xScale: rx,
+            yScale: ry,
+            borderColor: strokeW > 0 ? strokeCol : undefined,
+            borderWidth: strokeW,
+            color: fillCol,
+            rotate: rot,
+          });
+        } else {
+          // Rectangle / Box
+          page.drawRectangle({
+            x: drawCoords.x,
+            y: drawCoords.y,
+            width: pdfWidth,
+            height: pdfHeight,
+            borderColor: strokeW > 0 ? strokeCol : undefined,
+            borderWidth: strokeW,
+            color: fillCol,
+            rotate: rot,
+          });
         }
         break;
       }

@@ -373,6 +373,29 @@ export function generateStandaloneHtml(): string {
       background: rgba(59, 130, 246, 0.25);
       border-color: #2563eb;
     }
+    /* Decorations detection overlay */
+    .dec-detect-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 35;
+      background: rgba(147, 51, 234, 0.04);
+      display: none;
+    }
+    .dec-detect-box {
+      position: absolute;
+      border: 2px solid rgba(147, 51, 234, 0.7);
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all 0.15s ease;
+    }
+    .dec-detect-box:hover {
+      background: rgba(147, 51, 234, 0.3);
+      border-color: #7c3aed;
+    }
+    .el-shape {
+      box-sizing: border-box;
+      pointer-events: auto;
+    }
   </style>
 </head>
 <body>
@@ -388,6 +411,7 @@ export function generateStandaloneHtml(): string {
       <input type="file" id="file-input" accept=".pdf" style="display:none">
       <button onclick="document.getElementById('file-input').click()">📂 Apri PDF</button>
       <button onclick="createBlankDocument()">📄 Nuovo Foglio A4</button>
+      <button style="background:#7c3aed; color:#fff; border-color:#6d28d9;" onclick="openAutomationModal()">⚡ Script Automazione</button>
       <button class="btn-primary" onclick="exportPDF()">💾 Salva PDF Finale</button>
     </div>
   </header>
@@ -397,15 +421,18 @@ export function generateStandaloneHtml(): string {
     <div class="tool-group">
       <button id="tool-select" class="active" onclick="setTool('select')">👆 Seleziona</button>
       <button id="tool-edit_text" onclick="setTool('edit_existing_text')">✏️ Edita Testo Presente</button>
+      <button id="tool-edit_decorations" onclick="setTool('edit_existing_decorations')" style="color:#7c3aed; font-weight:600;">📐 Edita Linee e Riquadri</button>
     </div>
     <div class="divider"></div>
     <div class="tool-group">
       <button id="tool-text_field" onclick="setTool('text_field')">📝 Campo Testo</button>
       <button id="tool-checkbox" onclick="setTool('checkbox')">☑️ Checkbox</button>
       <button id="tool-radio" onclick="setTool('radio')">🔘 Radio</button>
+      <button id="tool-dropdown" onclick="setTool('dropdown')">📋 Dropdown</button>
     </div>
     <div class="divider"></div>
     <div class="tool-group">
+      <button id="tool-shape" onclick="setTool('shape')">🔷 Forme / Riquadri</button>
       <button id="tool-text" onclick="setTool('text')">🔤 Nuovo Testo</button>
       <button id="tool-whiteout" onclick="setTool('whiteout')">🩹 Bianchetto / Modifica</button>
       <button onclick="openSignatureModal()">✍️ Firma</button>
@@ -430,6 +457,7 @@ export function generateStandaloneHtml(): string {
       <div class="page-wrapper" id="page-wrapper">
         <canvas id="pdf-canvas"></canvas>
         <div class="text-detect-layer" id="text-detect-layer"></div>
+        <div class="dec-detect-layer" id="dec-detect-layer"></div>
         <div class="elements-layer" id="elements-overlay"></div>
       </div>
     </div>
@@ -459,6 +487,41 @@ export function generateStandaloneHtml(): string {
     </div>
   </div>
 
+  <!-- Automation Modal -->
+  <div class="modal-backdrop" id="auto-modal">
+    <div class="modal" style="width:620px; max-width:92vw;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="margin:0; font-size:16px;">⚡ Automazione & Script Campi</h3>
+        <button onclick="closeAutomationModal()" style="border:none; background:transparent; cursor:pointer; font-size:18px; color:var(--text-muted);">✕</button>
+      </div>
+      <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">
+        Esegui codice JavaScript personalizzato per compilare o manipolare automaticamente i campi e i testi del documento.
+      </p>
+
+      <div style="margin-bottom:10px;">
+        <label style="font-size:11px; font-weight:600; color:var(--text-muted); display:block; margin-bottom:4px;">Modello / Preset:</label>
+        <select id="auto-preset-select" onchange="loadAutoPreset(this.value)" style="width:100%; padding:6px; font-size:12px; border:1px solid var(--border); border-radius:4px;">
+          <option value="custom">-- Script personalizzato --</option>
+          <option value="autofill">Compila Dati Anagrafici & Contratto</option>
+          <option value="uppercase">Converti Campi Testo in MAIUSCOLO</option>
+          <option value="clear">Svuota tutti i Campi Compilabili</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <label style="font-size:11px; font-weight:600; color:var(--text-muted); display:block; margin-bottom:4px;">Codice JavaScript (oggetti disponibili: fields, elements, log):</label>
+        <textarea id="auto-script-editor" style="width:100%; height:160px; font-family:monospace; font-size:12px; padding:8px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; resize:vertical; background:#0f172a; color:#f8fafc;"></textarea>
+      </div>
+
+      <div id="auto-log" style="font-size:11px; min-height:16px; margin-bottom:12px;"></div>
+
+      <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <button onclick="closeAutomationModal()">Chiudi</button>
+        <button class="btn-primary" onclick="runAutomationScript()">▶ Esegui Script</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // State
     let currentTool = 'select';
@@ -467,6 +530,7 @@ export function generateStandaloneHtml(): string {
     let selectedId = null;
     let rawPdfBuffer = null; // NEVER detached: stored as untouched ArrayBuffer
     let extractedTexts = [];
+    let extractedDecorations = [];
     const pageWidth = 595.28;
     const pageHeight = 841.89;
 
@@ -478,7 +542,9 @@ export function generateStandaloneHtml(): string {
     function setTool(tool) {
       currentTool = tool;
       document.querySelectorAll('.toolbar button').forEach(b => b.classList.remove('active'));
-      const activeBtn = document.getElementById('tool-' + tool) || (tool === 'edit_existing_text' ? document.getElementById('tool-edit_text') : null);
+      const activeBtn = document.getElementById('tool-' + tool) || 
+        (tool === 'edit_existing_text' ? document.getElementById('tool-edit_text') : 
+         tool === 'edit_existing_decorations' ? document.getElementById('tool-edit_decorations') : null);
       if (activeBtn) activeBtn.classList.add('active');
 
       const detectLayer = document.getElementById('text-detect-layer');
@@ -486,6 +552,13 @@ export function generateStandaloneHtml(): string {
         detectLayer.style.display = 'block';
       } else {
         detectLayer.style.display = 'none';
+      }
+
+      const decLayer = document.getElementById('dec-detect-layer');
+      if (currentTool === 'edit_existing_decorations') {
+        decLayer.style.display = 'block';
+      } else {
+        decLayer.style.display = 'none';
       }
     }
 
@@ -581,6 +654,21 @@ export function generateStandaloneHtml(): string {
                   x, y, width: Math.min(width, height, 22), height: Math.min(width, height, 22), rotation: 0
                 });
               }
+            } else if (annot.fieldType === 'Ch') {
+              const rawOpts = annot.options || [];
+              const options = rawOpts.map(o => typeof o === 'string' ? o : o.displayValue || o.exportValue || String(o));
+              elements.push({
+                id: 'dd_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                type: 'dropdown',
+                fieldName: fName,
+                options: options.length > 0 ? options : ['Opzione 1', 'Opzione 2'],
+                defaultValue: annot.fieldValue ? String(annot.fieldValue) : (options[0] || ''),
+                fontSize: 10,
+                fontColor: '#0f172a',
+                borderColor: '#3b82f6',
+                backgroundColor: '#ffffff',
+                x, y, width, height, rotation: 0
+              });
             }
           }
         } catch (annotErr) {
@@ -702,6 +790,161 @@ export function generateStandaloneHtml(): string {
             console.warn("Text content extraction error:", err);
           }
 
+          // Extract vector decorations (lines, boxes, rules)
+          try {
+            const opList = await page.getOperatorList();
+            const OPS = (window.pdfjsLib && window.pdfjsLib.OPS) || {};
+            extractedDecorations = [];
+            if (opList && opList.fnArray && opList.argsArray) {
+              const fnArr = opList.fnArray;
+              const argsArr = opList.argsArray;
+              let ctm = [1, 0, 0, 1, 0, 0];
+              const ctmStack = [];
+              let currentStrokeColor = '#475569';
+              let currentFillColor = '#f1f5f9';
+              let currentLineWidth = 1;
+
+              function rgbToHex(r, g, b) {
+                const normR = r <= 1 && r >= 0 && (r !== 0 || g !== 0 || b !== 0) ? Math.round(r * 255) : Math.round(r);
+                const normG = g <= 1 && g >= 0 && (g !== 0 || g !== 0 || b !== 0) ? Math.round(g * 255) : Math.round(g);
+                const normB = b <= 1 && b >= 0 && (b !== 0 || b !== 0 || b !== 0) ? Math.round(b * 255) : Math.round(b);
+                const clamp = v => Math.max(0, Math.min(255, v));
+                const hex = v => clamp(v).toString(16).padStart(2, '0');
+                return '#' + hex(normR) + hex(normG) + hex(normB);
+              }
+              function applyTransform(pt, m) {
+                return [
+                  m[0] * pt[0] + m[2] * pt[1] + m[4],
+                  m[1] * pt[0] + m[3] * pt[1] + m[5]
+                ];
+              }
+              function multiplyMatrices(m1, m2) {
+                return [
+                  m1[0]*m2[0] + m1[2]*m2[1],
+                  m1[1]*m2[0] + m1[3]*m2[1],
+                  m1[0]*m2[2] + m1[2]*m2[3],
+                  m1[1]*m2[2] + m1[3]*m2[3],
+                  m1[0]*m2[4] + m1[2]*m2[5] + m1[4],
+                  m1[1]*m2[4] + m1[3]*m2[5] + m1[5]
+                ];
+              }
+
+              for (let i = 0; i < fnArr.length; i++) {
+                const fn = fnArr[i];
+                const args = argsArr[i];
+                if (fn === OPS.save) {
+                  ctmStack.push([...ctm]);
+                } else if (fn === OPS.restore) {
+                  if (ctmStack.length > 0) ctm = ctmStack.pop();
+                } else if (fn === OPS.transform) {
+                  if (Array.isArray(args) && args.length >= 6) ctm = multiplyMatrices(ctm, args);
+                } else if (fn === OPS.setStrokeRGBColor || fn === OPS.setStrokeColorN || fn === OPS.setStrokeColor) {
+                  if (Array.isArray(args)) {
+                    if (args.length === 1 && typeof args[0] === 'string') currentStrokeColor = args[0];
+                    else if (args.length >= 3) currentStrokeColor = rgbToHex(args[0], args[1], args[2]);
+                    else if (args.length === 1 && typeof args[0] === 'number') currentStrokeColor = rgbToHex(args[0], args[0], args[0]);
+                  }
+                } else if (fn === OPS.setFillRGBColor || fn === OPS.setFillColorN || fn === OPS.setFillColor) {
+                  if (Array.isArray(args)) {
+                    if (args.length === 1 && typeof args[0] === 'string') currentFillColor = args[0];
+                    else if (args.length >= 3) currentFillColor = rgbToHex(args[0], args[1], args[2]);
+                    else if (args.length === 1 && typeof args[0] === 'number') currentFillColor = rgbToHex(args[0], args[0], args[0]);
+                  }
+                } else if (fn === OPS.setLineWidth) {
+                  if (Array.isArray(args) && typeof args[0] === 'number') currentLineWidth = Math.max(0.5, args[0]);
+                }
+
+                if (fn === OPS.constructPath && Array.isArray(args)) {
+                  const bbox = args[2];
+                  let hasBbox = false;
+                  let minX = 0, minY = 0, maxX = 0, maxY = 0;
+                  let isCircle = false;
+
+                  if (bbox && (Array.isArray(bbox) || ArrayBuffer.isView(bbox)) && bbox.length >= 4) {
+                    const p1 = applyTransform([bbox[0], bbox[1]], ctm);
+                    const p2 = applyTransform([bbox[2], bbox[3]], ctm);
+                    const p3 = applyTransform([bbox[0], bbox[3]], ctm);
+                    const p4 = applyTransform([bbox[2], bbox[1]], ctm);
+
+                    minX = Math.min(p1[0], p2[0], p3[0], p4[0]);
+                    maxX = Math.max(p1[0], p2[0], p3[0], p4[0]);
+                    minY = Math.min(p1[1], p2[1], p3[1], p4[1]);
+                    maxY = Math.max(p1[1], p2[1], p3[1], p4[1]);
+                    hasBbox = true;
+
+                    if (args[1] && args[1][0] && args[1][0].length >= 16) {
+                      const opsArr = args[1][0];
+                      let curveCount = 0;
+                      for (let k = 0; k < opsArr.length; k++) {
+                        if (opsArr[k] === 2) curveCount++;
+                      }
+                      if (curveCount >= 3) isCircle = true;
+                    }
+                  }
+
+                  if (hasBbox) {
+                    const w = maxX - minX;
+                    const h = maxY - minY;
+                    const topY = (viewport.height / zoom) - maxY;
+
+                    if ((w < (viewport.width / zoom) * 0.98 || h < (viewport.height / zoom) * 0.98) && (w >= 4 || h >= 4)) {
+                      const isHLine = h <= 3 && w >= 5;
+                      const isVLine = w <= 3 && h >= 5;
+                      const isLine = isHLine || isVLine;
+
+                      const decType = isCircle ? 'circle' : (isLine ? 'line' : 'rectangle');
+                      const decX = Math.round(isVLine ? minX - currentLineWidth / 2 : minX);
+                      const decY = Math.round(isHLine ? topY - currentLineWidth / 2 : topY);
+                      const decW = Math.round(isVLine ? Math.max(2, currentLineWidth) : w);
+                      const decH = Math.round(isHLine ? Math.max(2, currentLineWidth) : h);
+
+                      extractedDecorations.push({
+                        id: 'dec_' + (extractedDecorations.length + 1),
+                        type: decType,
+                        x: decX,
+                        y: decY,
+                        width: Math.max(decW, isLine ? 10 : 6),
+                        height: Math.max(decH, isLine ? 2 : 6),
+                        strokeColor: currentStrokeColor,
+                        fillColor: isLine ? currentStrokeColor : currentFillColor,
+                        strokeWidth: Math.round(currentLineWidth),
+                        title: isLine ? (isHLine ? 'Linea Orizzontale' : 'Linea Verticale') : (isCircle ? 'Cerchio / Badge' : 'Riquadro')
+                      });
+                    }
+                  }
+                } else if (fn === OPS.rectangle && Array.isArray(args) && args.length >= 4) {
+                  const p1 = applyTransform([args[0], args[1]], ctm);
+                  const p2 = applyTransform([args[0] + args[2], args[1] + args[3]], ctm);
+                  const minX = Math.min(p1[0], p2[0]);
+                  const maxX = Math.max(p1[0], p2[0]);
+                  const minY = Math.min(p1[1], p2[1]);
+                  const maxY = Math.max(p1[1], p2[1]);
+                  const w = maxX - minX;
+                  const h = maxY - minY;
+                  const topY = (viewport.height / zoom) - maxY;
+                  if ((w < (viewport.width / zoom) * 0.98 || h < (viewport.height / zoom) * 0.98) && (w >= 4 || h >= 4)) {
+                    const isLine = h <= 3 || w <= 3;
+                    extractedDecorations.push({
+                      id: 'dec_' + (extractedDecorations.length + 1),
+                      type: isLine ? 'line' : 'rectangle',
+                      x: Math.round(minX),
+                      y: Math.round(topY),
+                      width: Math.max(isLine ? 10 : 6, Math.round(w)),
+                      height: Math.max(isLine ? 2 : 6, Math.round(h)),
+                      strokeColor: currentStrokeColor,
+                      fillColor: isLine ? currentStrokeColor : currentFillColor,
+                      strokeWidth: Math.round(currentLineWidth),
+                      title: isLine ? 'Linea Divisoria' : 'Riquadro'
+                    });
+                  }
+                }
+              }
+            }
+            renderDecDetectLayer();
+          } catch(decErr) {
+            console.warn("Decorations scan error:", decErr);
+          }
+
         } catch (err) {
           console.warn("Rendering fallback:", err);
           ctx.fillStyle = '#ffffff';
@@ -754,9 +997,116 @@ export function generateStandaloneHtml(): string {
       renderElementsOverlay();
     }
 
+    function renderDecDetectLayer() {
+      const layer = document.getElementById('dec-detect-layer');
+      if (!layer) return;
+      layer.innerHTML = '';
+      extractedDecorations.forEach((item) => {
+        const isHLine = item.type === 'line' && item.width >= item.height;
+        const isVLine = item.type === 'line' && item.height > item.width;
+        const hitHeight = isHLine ? Math.max(item.height * zoom, 18) : Math.max(item.height * zoom, 12);
+        const hitWidth = isVLine ? Math.max(item.width * zoom, 18) : Math.max(item.width * zoom, 12);
+        const renderTop = isHLine ? (item.y * zoom) - (hitHeight - item.height * zoom) / 2 : item.y * zoom;
+        const renderLeft = isVLine ? (item.x * zoom) - (hitWidth - item.width * zoom) / 2 : item.x * zoom;
+
+        const box = document.createElement('div');
+        box.className = 'dec-detect-box';
+        box.style.left = renderLeft + 'px';
+        box.style.top = renderTop + 'px';
+        box.style.width = hitWidth + 'px';
+        box.style.height = hitHeight + 'px';
+        box.style.display = 'flex';
+        box.style.alignItems = 'center';
+        box.style.justifyContent = 'center';
+        box.title = 'Clicca per modificare: ' + item.title + ' (' + item.width + 'x' + item.height + 'pt)';
+
+        if (isHLine) {
+          const innerLine = document.createElement('div');
+          innerLine.style.width = '100%';
+          innerLine.style.height = Math.max(2, item.height * zoom) + 'px';
+          innerLine.style.backgroundColor = '#9333ea';
+          innerLine.style.boxShadow = '0 0 6px rgba(147, 51, 234, 0.8)';
+          innerLine.style.pointerEvents = 'none';
+          box.appendChild(innerLine);
+        } else if (isVLine) {
+          const innerLine = document.createElement('div');
+          innerLine.style.height = '100%';
+          innerLine.style.width = Math.max(2, item.width * zoom) + 'px';
+          innerLine.style.backgroundColor = '#9333ea';
+          innerLine.style.boxShadow = '0 0 6px rgba(147, 51, 234, 0.8)';
+          innerLine.style.pointerEvents = 'none';
+          box.appendChild(innerLine);
+        }
+
+        box.onclick = (e) => {
+          e.stopPropagation();
+          handleEditOriginalDecoration(item);
+        };
+        layer.appendChild(box);
+      });
+    }
+
+    function handleEditOriginalDecoration(item) {
+      const shapeId = 'shape_' + Date.now();
+      const isHLine = item.type === 'line' && item.width >= item.height;
+      const isVLine = item.type === 'line' && item.height > item.width;
+      const initialH = isHLine ? Math.max(item.height, 8) : item.height;
+      const initialW = isVLine ? Math.max(item.width, 8) : item.width;
+      const initialY = isHLine ? item.y - (initialH - item.height) / 2 : item.y;
+      const initialX = isVLine ? item.x - (initialW - item.width) / 2 : item.x;
+
+      const newShape = {
+        id: shapeId,
+        type: 'shape',
+        shapeType: item.type || 'rectangle',
+        x: Math.round(initialX),
+        y: Math.round(initialY),
+        width: Math.round(initialW),
+        height: Math.round(initialH),
+        strokeColor: item.strokeColor || '#334155',
+        strokeWidth: item.strokeWidth !== undefined ? item.strokeWidth : 1,
+        strokeStyle: 'solid',
+        fillColor: item.type === 'line' ? 'transparent' : (item.fillColor || 'transparent'),
+        borderRadius: item.type === 'circle' ? 9999 : 0,
+        isOriginalPdfDecoration: true,
+        originalX: item.x,
+        originalY: item.y,
+        originalWidth: item.width,
+        originalHeight: item.height,
+        originalRotation: 0,
+        rotation: 0
+      };
+      elements.push(newShape);
+      selectedId = shapeId;
+      setTool('select');
+      renderElementsOverlay();
+    }
+
     function renderElementsOverlay() {
       const overlay = document.getElementById('elements-overlay');
       overlay.innerHTML = '';
+
+      // Render whiteout patches covering original background footprint of modified/moved PDF decorations
+      elements.forEach(el => {
+        if (el.type === 'shape' && el.isOriginalPdfDecoration) {
+          const origX = el.originalX !== undefined ? el.originalX : el.x;
+          const origY = el.originalY !== undefined ? el.originalY : el.y;
+          const origW = el.originalWidth !== undefined ? el.originalWidth : el.width;
+          const origH = el.originalHeight !== undefined ? el.originalHeight : el.height;
+          const isThin = origH <= 3;
+          const padY = isThin ? 1.5 : 0;
+          const wBox = document.createElement('div');
+          wBox.style.position = 'absolute';
+          wBox.style.left = (origX * zoom) + 'px';
+          wBox.style.top = ((origY - padY) * zoom) + 'px';
+          wBox.style.width = (origW * zoom) + 'px';
+          wBox.style.height = ((origH + padY * 2) * zoom) + 'px';
+          wBox.style.backgroundColor = '#ffffff';
+          wBox.style.pointerEvents = 'none';
+          wBox.style.zIndex = '1';
+          overlay.appendChild(wBox);
+        }
+      });
 
       elements.forEach(el => {
         const box = document.createElement('div');
@@ -771,6 +1121,17 @@ export function generateStandaloneHtml(): string {
         if (el.type === 'text_field') {
           box.className += ' el-text_field';
           box.innerText = el.defaultValue || el.fieldName || '[Campo di Testo]';
+        } else if (el.type === 'dropdown') {
+          box.className += ' el-text_field';
+          box.style.background = el.backgroundColor || '#ffffff';
+          box.style.border = '1px solid ' + (el.borderColor || '#3b82f6');
+          box.style.display = 'flex';
+          box.style.alignItems = 'center';
+          box.style.justifyContent = 'space-between';
+          box.style.padding = '0 6px';
+          box.style.cursor = 'pointer';
+          const dispVal = el.defaultValue || (el.options && el.options[0]) || ('[' + (el.fieldName || 'Dropdown') + ']');
+          box.innerHTML = '<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:' + ((el.fontSize || 10) * zoom) + 'px; color:' + (el.fontColor || '#0f172a') + ';">' + dispVal + '</span><span style="font-size:10px; color:#64748b; margin-left:4px;">▼</span>';
         } else if (el.type === 'checkbox') {
           box.className += ' el-checkbox';
           box.innerHTML = el.isChecked ? '✓' : '';
@@ -812,6 +1173,41 @@ export function generateStandaloneHtml(): string {
           box.className += ' el-whiteout';
           box.innerText = el.replacementText || '';
           box.style.fontSize = ((el.replacementFontSize || 11) * zoom) + 'px';
+        } else if (el.type === 'shape') {
+          box.className += ' el-shape';
+          box.style.zIndex = '10';
+          const shapeType = el.shapeType || 'rectangle';
+          const strokeW = el.strokeWidth !== undefined ? el.strokeWidth : 1;
+          const strokeCol = el.strokeColor || '#334155';
+          const strokeStyle = el.strokeStyle || 'solid';
+          const fillCol = el.fillColor && el.fillColor !== 'transparent' ? el.fillColor : 'transparent';
+
+          box.style.backgroundColor = fillCol;
+          box.style.boxSizing = 'border-box';
+          if (shapeType === 'line') {
+            const isHorizontal = el.height <= el.width;
+            box.style.border = 'none';
+            box.style.backgroundColor = 'transparent';
+            const innerLine = document.createElement('div');
+            innerLine.style.position = 'absolute';
+            innerLine.style.left = '0';
+            innerLine.style.top = isHorizontal ? '50%' : '0';
+            innerLine.style.width = isHorizontal ? '100%' : (Math.max(1, Math.round(strokeW * zoom)) + 'px');
+            innerLine.style.height = isHorizontal ? (Math.max(1, Math.round(strokeW * zoom)) + 'px') : '100%';
+            innerLine.style.transform = isHorizontal ? 'translateY(-50%)' : 'none';
+            innerLine.style.backgroundColor = strokeStyle === 'solid' ? strokeCol : 'transparent';
+            if (strokeStyle !== 'solid') {
+              innerLine.style.borderTop = Math.max(1, Math.round(strokeW * zoom)) + 'px ' + strokeStyle + ' ' + strokeCol;
+            }
+            innerLine.style.pointerEvents = 'none';
+            box.appendChild(innerLine);
+          } else if (shapeType === 'circle') {
+            box.style.border = Math.max(0, Math.round(strokeW * zoom)) + 'px ' + strokeStyle + ' ' + strokeCol;
+            box.style.borderRadius = '50%';
+          } else {
+            box.style.border = Math.max(0, Math.round(strokeW * zoom)) + 'px ' + strokeStyle + ' ' + strokeCol;
+            box.style.borderRadius = ((el.borderRadius || 0) * zoom) + 'px';
+          }
         } else if (el.type === 'signature' || el.type === 'image') {
           box.className += el.type === 'signature' ? ' el-signature' : ' el-image';
           const img = document.createElement('img');
@@ -859,7 +1255,7 @@ export function generateStandaloneHtml(): string {
 
     function handleCanvasClick(e) {
       if (e.target.closest('.element-box')) return;
-      if (currentTool === 'edit_existing_text') return;
+      if (currentTool === 'edit_existing_text' || currentTool === 'edit_existing_decorations') return;
 
       const rect = document.getElementById('page-wrapper').getBoundingClientRect();
       const clickX = Math.round((e.clientX - rect.left) / zoom);
@@ -882,6 +1278,23 @@ export function generateStandaloneHtml(): string {
           x: clickX,
           y: clickY,
           width: 140,
+          height: 22,
+          rotation: 0
+        });
+      } else if (currentTool === 'dropdown') {
+        elements.push({
+          id: id,
+          type: 'dropdown',
+          fieldName: 'Menu_' + (elements.length + 1),
+          options: ['Opzione 1', 'Opzione 2', 'Opzione 3'],
+          defaultValue: 'Opzione 1',
+          fontSize: 10,
+          fontColor: '#0f172a',
+          borderColor: '#3b82f6',
+          backgroundColor: '#ffffff',
+          x: clickX,
+          y: clickY,
+          width: 150,
           height: 22,
           rotation: 0
         });
@@ -935,6 +1348,22 @@ export function generateStandaloneHtml(): string {
           height: 22,
           rotation: 0
         });
+      } else if (currentTool === 'shape') {
+        elements.push({
+          id: id,
+          type: 'shape',
+          shapeType: 'rectangle',
+          x: clickX,
+          y: clickY,
+          width: 160,
+          height: 80,
+          strokeColor: '#2563eb',
+          strokeWidth: 1.5,
+          strokeStyle: 'solid',
+          fillColor: '#eff6ff',
+          borderRadius: 6,
+          rotation: 0
+        });
       }
 
       selectedId = id;
@@ -981,8 +1410,11 @@ export function generateStandaloneHtml(): string {
       function onMouseMove(moveEvent) {
         const dx = (moveEvent.clientX - startX) / zoom;
         const dy = (moveEvent.clientY - startY) / zoom;
-        el.width = Math.max(14, Math.round(initW + dx));
-        el.height = Math.max(14, Math.round(initH + dy));
+        const isShapeLine = el.type === 'shape' && el.shapeType === 'line';
+        const minW = isShapeLine && el.width >= el.height ? 10 : 12;
+        const minH = isShapeLine && el.height <= el.width ? 2 : 12;
+        el.width = Math.max(minW, Math.round(initW + dx));
+        el.height = Math.max(minH, Math.round(initH + dy));
         renderElementsOverlay();
       }
 
@@ -1026,6 +1458,26 @@ export function generateStandaloneHtml(): string {
           <div class="prop-row">
             <label>Dimensione Font:</label>
             <input type="number" value="\${el.fontSize || 11}" min="8" max="36" onchange="updateProp('fontSize', parseInt(this.value))">
+          </div>
+        \`;
+      } else if (el.type === 'dropdown') {
+        const optsText = (el.options || []).join('\\n');
+        html += \`
+          <div class="prop-row">
+            <label>Nome Campo (AcroForm ID):</label>
+            <input type="text" value="\${el.fieldName || ''}" onchange="updateProp('fieldName', this.value)">
+          </div>
+          <div class="prop-row">
+            <label>Opzioni Menu (una per riga):</label>
+            <textarea rows="4" onchange="updateProp('options', this.value.split('\\\\n').map(s=>s.trim()).filter(Boolean))">\${optsText}</textarea>
+          </div>
+          <div class="prop-row">
+            <label>Valore Selezionato / Default:</label>
+            <input type="text" value="\${el.defaultValue || ''}" onchange="updateProp('defaultValue', this.value)">
+          </div>
+          <div class="prop-row">
+            <label>Dimensione Font:</label>
+            <input type="number" value="\${el.fontSize || 10}" min="8" max="36" onchange="updateProp('fontSize', parseInt(this.value))">
           </div>
         \`;
       } else if (el.type === 'checkbox') {
@@ -1078,6 +1530,56 @@ export function generateStandaloneHtml(): string {
           <div class="prop-row">
             <label>Dimensione Font:</label>
             <input type="number" value="\${el.replacementFontSize || 11}" onchange="updateProp('replacementFontSize', parseInt(this.value))">
+          </div>
+        \`;
+      } else if (el.type === 'shape') {
+        html += \`
+          <div class="prop-row">
+            <label>Tipo di Forma:</label>
+            <select onchange="updateProp('shapeType', this.value)">
+              <option value="rectangle" \${(el.shapeType||'rectangle')==='rectangle'?'selected':''}>Riquadro / Box</option>
+              <option value="line" \${el.shapeType==='line'?'selected':''}>Linea Divisoria</option>
+              <option value="circle" \${el.shapeType==='circle'?'selected':''}>Cerchio / Ovale</option>
+            </select>
+          </div>
+          <div class="prop-row">
+            <label>Colore Bordo / Linea:</label>
+            <input type="color" value="\${el.strokeColor || '#334155'}" onchange="updateProp('strokeColor', this.value)">
+          </div>
+          <div class="prop-row">
+            <label>Spessore Bordo (pt):</label>
+            <input type="number" min="0" max="40" value="\${el.strokeWidth !== undefined ? el.strokeWidth : 1}" onchange="updateProp('strokeWidth', parseInt(this.value)||0)">
+          </div>
+          <div class="prop-row">
+            <label>Stile Tratto:</label>
+            <select onchange="updateProp('strokeStyle', this.value)">
+              <option value="solid" \${(el.strokeStyle||'solid')==='solid'?'selected':''}>Continuo (Solid)</option>
+              <option value="dashed" \${el.strokeStyle==='dashed'?'selected':''}>Tratteggiato (Dashed)</option>
+              <option value="dotted" \${el.strokeStyle==='dotted'?'selected':''}>Puntinato (Dotted)</option>
+            </select>
+          </div>
+          <div class="prop-row">
+            <label>Colore Riempimento:</label>
+            <div style="display:flex; gap:6px; align-items:center;">
+              <input type="color" value="\${(el.fillColor && el.fillColor!=='transparent') ? el.fillColor : '#ffffff'}" onchange="updateProp('fillColor', this.value)">
+              <button style="font-size:11px; padding:4px 8px;" onclick="updateProp('fillColor', 'transparent')">Trasparente</button>
+            </div>
+          </div>
+          \${(el.shapeType||'rectangle') === 'rectangle' ? \`
+          <div class="prop-row">
+            <label>Arrotondamento Angoli (px):</label>
+            <input type="number" min="0" max="100" value="\${el.borderRadius || 0}" onchange="updateProp('borderRadius', parseInt(this.value)||0)">
+          </div>
+          \` : ''}
+          <div class="prop-row" style="flex-direction:row; gap:8px;">
+            <div style="flex:1;">
+              <label>Larghezza:</label>
+              <input type="number" value="\${el.width}" min="4" onchange="updateProp('width', parseInt(this.value)||10)">
+            </div>
+            <div style="flex:1;">
+              <label>Altezza:</label>
+              <input type="number" value="\${el.height}" min="2" onchange="updateProp('height', parseInt(this.value)||2)">
+            </div>
           </div>
         \`;
       }
@@ -1313,6 +1815,26 @@ export function generateStandaloneHtml(): string {
                 rotate: rot,
               });
             }
+          } else if (el.type === 'dropdown') {
+            try {
+              const fieldName = el.fieldName || 'dd_' + el.id;
+              let dd;
+              try { dd = form.getDropdown(fieldName); } catch(e) { dd = form.createDropdown(fieldName); }
+              if (el.options && el.options.length > 0) {
+                dd.setOptions(el.options);
+              }
+              if (el.defaultValue) dd.select(el.defaultValue);
+              dd.addToPage(page, {
+                x: pdfX,
+                y: pdfY,
+                width: el.width,
+                height: el.height,
+                borderWidth: 1,
+                rotate: rot,
+              });
+            } catch(err) {
+              console.warn("Dropdown export error:", err);
+            }
           } else if (el.type === 'checkbox') {
             try {
               const fieldName = el.fieldName || 'cb_' + el.id;
@@ -1355,6 +1877,85 @@ export function generateStandaloneHtml(): string {
               });
             } catch(err) {
               console.warn("Image embed error:", err);
+            }
+          } else if (el.type === 'shape') {
+            // If it was an original decoration from the PDF, whiteout the original footprint
+            if (el.isOriginalPdfDecoration) {
+              const origX = el.originalX !== undefined ? el.originalX : el.x;
+              const origY = el.originalY !== undefined ? el.originalY : el.y;
+              const origW = el.originalWidth !== undefined ? el.originalWidth : el.width;
+              const origH = el.originalHeight !== undefined ? el.originalHeight : el.height;
+              const origPdfY = pHeight - origY - origH;
+              page.drawRectangle({
+                x: origX,
+                y: origPdfY,
+                width: origW,
+                height: origH,
+                color: PDFLib.rgb(1, 1, 1),
+                rotate: PDFLib.degrees(el.originalRotation || 0),
+              });
+            }
+
+            function hexToRgbObj(hex, defR, defG, defB) {
+              if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return PDFLib.rgb(defR, defG, defB);
+              const clean = hex.replace('#', '');
+              if (clean.length === 6) {
+                return PDFLib.rgb(
+                  parseInt(clean.substring(0, 2), 16) / 255,
+                  parseInt(clean.substring(2, 4), 16) / 255,
+                  parseInt(clean.substring(4, 6), 16) / 255
+                );
+              }
+              return PDFLib.rgb(defR, defG, defB);
+            }
+
+            const strokeCol = hexToRgbObj(el.strokeColor || '#334155', 0.2, 0.25, 0.35);
+            const strokeW = el.strokeWidth !== undefined ? el.strokeWidth : 1;
+            const hasFill = el.fillColor && el.fillColor !== 'transparent';
+            const fillCol = hasFill ? hexToRgbObj(el.fillColor, 1, 1, 1) : undefined;
+            const shapeType = el.shapeType || 'rectangle';
+
+            if (shapeType === 'line') {
+              const isHorizontal = el.height <= el.width;
+              if (isHorizontal) {
+                page.drawLine({
+                  start: { x: pdfX, y: pdfY + el.height / 2 },
+                  end: { x: pdfX + el.width, y: pdfY + el.height / 2 },
+                  thickness: strokeW || 1,
+                  color: strokeCol,
+                });
+              } else {
+                page.drawLine({
+                  start: { x: pdfX + el.width / 2, y: pdfY },
+                  end: { x: pdfX + el.width / 2, y: pdfY + el.height },
+                  thickness: strokeW || 1,
+                  color: strokeCol,
+                });
+              }
+            } else if (shapeType === 'circle') {
+              const rx = el.width / 2;
+              const ry = el.height / 2;
+              page.drawEllipse({
+                x: pdfX + rx,
+                y: pdfY + ry,
+                xScale: rx,
+                yScale: ry,
+                borderColor: strokeW > 0 ? strokeCol : undefined,
+                borderWidth: strokeW,
+                color: fillCol,
+                rotate: rot,
+              });
+            } else {
+              page.drawRectangle({
+                x: pdfX,
+                y: pdfY,
+                width: el.width,
+                height: el.height,
+                borderColor: strokeW > 0 ? strokeCol : undefined,
+                borderWidth: strokeW,
+                color: fillCol,
+                rotate: rot,
+              });
             }
           }
         }
@@ -1450,6 +2051,124 @@ export function generateStandaloneHtml(): string {
         }
       }
     });
+
+    // Automation Modal Logic
+    const autoPresets = {
+      autofill: \`// Compilazione automatica dati e preferenze
+fields.Nome_Cognome = "Dott. Alessandro Manzoni";
+fields.Codice_Fiscale = "MNZLSN85M01H501Z";
+fields.Indirizzo_Residenza = "Via dei Promessi Sposi 10, Milano";
+fields.Tipologia_Contratto = "Sviluppo Software";
+fields.Consenso_GDPR = true;
+fields.Consenso_Comunicazioni = true;
+
+log("Dati compilati con successo!");\`,
+
+      uppercase: \`// Converte tutti i campi di testo in MAIUSCOLO
+let count = 0;
+elements.forEach(el => {
+  if (el.type === 'text_field' && el.defaultValue) {
+    el.defaultValue = el.defaultValue.toUpperCase();
+    count++;
+  }
+});
+log(count + " campi convertiti in maiuscolo!");\`,
+
+      clear: \`// Svuota tutti i campi di testo compilabili
+let count = 0;
+elements.forEach(el => {
+  if (el.type === 'text_field') {
+    el.defaultValue = '';
+    count++;
+  } else if (el.type === 'checkbox') {
+    el.isChecked = false;
+  }
+});
+log("Tutti i campi (" + count + ") sono stati svuotati!");\`,
+
+      custom: \`// Scrivi qui il tuo script JavaScript:
+// Puoi usare 'fields.Nome_Campo = "valore"' oppure accedere direttamente all'array 'elements'.
+// Esempio:
+// fields.Nome_Cognome = "Mario Rossi";
+log("Pronto per l'esecuzione");\`
+    };
+
+    function openAutomationModal() {
+      const modal = document.getElementById('auto-modal');
+      const editor = document.getElementById('auto-script-editor');
+      const select = document.getElementById('auto-preset-select');
+      const logDiv = document.getElementById('auto-log');
+      logDiv.innerText = '';
+      logDiv.style.color = '#10b981';
+      if (!editor.value.trim()) {
+        select.value = 'autofill';
+        editor.value = autoPresets.autofill;
+      }
+      modal.style.display = 'flex';
+    }
+
+    function closeAutomationModal() {
+      document.getElementById('auto-modal').style.display = 'none';
+    }
+
+    function loadAutoPreset(presetKey) {
+      const editor = document.getElementById('auto-script-editor');
+      const logDiv = document.getElementById('auto-log');
+      logDiv.innerText = '';
+      if (autoPresets[presetKey]) {
+        editor.value = autoPresets[presetKey];
+      }
+    }
+
+    function runAutomationScript() {
+      const editor = document.getElementById('auto-script-editor');
+      const logDiv = document.getElementById('auto-log');
+      const code = editor.value;
+
+      try {
+        const fieldsProxy = {};
+        elements.forEach(el => {
+          const key = el.fieldName || el.groupName || el.id;
+          if (el.type === 'text_field' || el.type === 'dropdown') {
+            fieldsProxy[key] = el.defaultValue || '';
+          } else if (el.type === 'checkbox') {
+            fieldsProxy[key] = Boolean(el.isChecked);
+          } else if (el.type === 'radio') {
+            if (el.isSelected) fieldsProxy[key] = el.value;
+          }
+        });
+
+        let outputMsg = "Script eseguito con successo!";
+        const customLog = (msg) => {
+          outputMsg = String(msg);
+        };
+
+        const fn = new Function('fields', 'elements', 'log', code);
+        fn(fieldsProxy, elements, customLog);
+
+        // Synchronize back fieldsProxy changes to elements
+        elements.forEach(el => {
+          const key = el.fieldName || el.groupName || el.id;
+          if (key in fieldsProxy) {
+            const val = fieldsProxy[key];
+            if (el.type === 'text_field' || el.type === 'dropdown') {
+              el.defaultValue = String(val);
+            } else if (el.type === 'checkbox') {
+              el.isChecked = Boolean(val);
+            } else if (el.type === 'radio') {
+              el.isSelected = (el.value === val);
+            }
+          }
+        });
+
+        renderElementsOverlay();
+        logDiv.style.color = '#10b981';
+        logDiv.innerText = '✓ ' + outputMsg;
+      } catch (err) {
+        logDiv.style.color = '#ef4444';
+        logDiv.innerText = 'Errore script: ' + err.message;
+      }
+    }
 
     // Initialize with a blank sheet
     createBlankDocument();

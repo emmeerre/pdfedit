@@ -182,6 +182,25 @@ export async function createSampleContractPdf(): Promise<Uint8Array> {
     color: rgb(0.2, 0.2, 0.2),
   });
 
+  currentY -= 28;
+  page.drawText('Categoria / Tipologia Contratto:', {
+    x: 40,
+    y: currentY,
+    size: 9.5,
+    font: fontRegular,
+    color: rgb(0.3, 0.3, 0.3),
+  });
+
+  page.drawRectangle({
+    x: 195,
+    y: currentY - 4,
+    width: 220,
+    height: 18,
+    borderColor: rgb(0.75, 0.75, 0.75),
+    borderWidth: 0.8,
+    color: rgb(0.97, 0.97, 0.98),
+  });
+
   currentY -= 35;
   page.drawText('3. DICHIARAZIONI & CONSENSI', {
     x: 40,
@@ -200,11 +219,11 @@ export async function createSampleContractPdf(): Promise<Uint8Array> {
 
   currentY -= 25;
   page.drawRectangle({
-    x: 44,
-    y: currentY - 2,
-    width: 12,
-    height: 12,
-    borderColor: rgb(0.5, 0.5, 0.5),
+    x: 42,
+    y: currentY - 4,
+    width: 16,
+    height: 16,
+    borderColor: rgb(0.6, 0.6, 0.6),
     borderWidth: 1,
     color: rgb(1, 1, 1),
   });
@@ -218,11 +237,11 @@ export async function createSampleContractPdf(): Promise<Uint8Array> {
 
   currentY -= 22;
   page.drawRectangle({
-    x: 44,
-    y: currentY - 2,
-    width: 12,
-    height: 12,
-    borderColor: rgb(0.5, 0.5, 0.5),
+    x: 42,
+    y: currentY - 4,
+    width: 16,
+    height: 16,
+    borderColor: rgb(0.6, 0.6, 0.6),
     borderWidth: 1,
     color: rgb(1, 1, 1),
   });
@@ -334,4 +353,137 @@ export async function createSampleContractPdf(): Promise<Uint8Array> {
   });
 
   return await pdfDoc.save();
+}
+
+/**
+ * Returns perfectly aligned sample elements matching createSampleContractPdf graphics
+ */
+export function getSampleElements(): any[] {
+  return [
+    {
+      id: 'tf_nome',
+      pageIndex: 0,
+      type: 'text_field',
+      fieldName: 'Nome_Cognome',
+      defaultValue: 'Mario Rossi',
+      fontSize: 10,
+      fontColor: '#0f172a',
+      borderColor: '#3b82f6',
+      backgroundColor: '#ffffff',
+      isMultiline: false,
+      isRequired: true,
+      x: 140,
+      y: 136,
+      width: 145,
+      height: 18,
+    },
+    {
+      id: 'tf_cf',
+      pageIndex: 0,
+      type: 'text_field',
+      fieldName: 'Codice_Fiscale',
+      defaultValue: 'RSSMRA85M01H501Z',
+      fontSize: 10,
+      fontColor: '#0f172a',
+      borderColor: '#3b82f6',
+      backgroundColor: '#ffffff',
+      isMultiline: false,
+      isRequired: true,
+      x: 420,
+      y: 136,
+      width: 135,
+      height: 18,
+    },
+    {
+      id: 'tf_indirizzo',
+      pageIndex: 0,
+      type: 'text_field',
+      fieldName: 'Indirizzo_Residenza',
+      defaultValue: 'Via Roma 42, 20121 Milano (MI)',
+      fontSize: 10,
+      fontColor: '#0f172a',
+      borderColor: '#3b82f6',
+      backgroundColor: '#ffffff',
+      isMultiline: false,
+      isRequired: false,
+      x: 155,
+      y: 171,
+      width: 400,
+      height: 18,
+    },
+    {
+      id: 'rd_presenza',
+      pageIndex: 0,
+      type: 'radio',
+      groupName: 'Modalita_Servizio',
+      value: 'InPresenza',
+      isSelected: true,
+      borderColor: '#1d4ed8',
+      x: 42,
+      y: 273,
+      width: 16,
+      height: 16,
+    },
+    {
+      id: 'rd_remoto',
+      pageIndex: 0,
+      type: 'radio',
+      groupName: 'Modalita_Servizio',
+      value: 'Smartworking',
+      isSelected: false,
+      borderColor: '#334155',
+      x: 262,
+      y: 273,
+      width: 16,
+      height: 16,
+    },
+    {
+      id: 'dd_contratto',
+      pageIndex: 0,
+      type: 'dropdown',
+      fieldName: 'Tipologia_Contratto',
+      options: [
+        'Consulenza Standard',
+        'Sviluppo Software',
+        'Assistenza Tecnica',
+        'Progetto Speciale',
+      ],
+      defaultValue: 'Consulenza Standard',
+      fontSize: 9.5,
+      fontColor: '#0f172a',
+      borderColor: '#3b82f6',
+      backgroundColor: '#ffffff',
+      isRequired: true,
+      x: 195,
+      y: 299,
+      width: 220,
+      height: 18,
+    },
+    {
+      id: 'cb_privacy',
+      pageIndex: 0,
+      type: 'checkbox',
+      fieldName: 'Consenso_GDPR',
+      isChecked: true,
+      borderColor: '#047857',
+      backgroundColor: '#ffffff',
+      x: 42,
+      y: 361,
+      width: 16,
+      height: 16,
+    },
+    {
+      id: 'cb_newsletter',
+      pageIndex: 0,
+      type: 'checkbox',
+      fieldName: 'Consenso_Comunicazioni',
+      isChecked: false,
+      borderColor: '#334155',
+      backgroundColor: '#ffffff',
+      x: 42,
+      y: 383,
+      width: 16,
+      height: 16,
+    },
+  ];
 }
