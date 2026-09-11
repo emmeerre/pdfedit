@@ -4,8 +4,9 @@ import { Sidebar } from './components/Sidebar';
 import { PageViewer } from './components/PageViewer';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { SignatureModal } from './components/SignatureModal';
+import { AutomationModal } from './components/AutomationModal';
 import { EditorElement, ToolType } from './types';
-import { createSampleContractPdf, createBlankPdf } from './utils/samplePdf';
+import { createSampleContractPdf, createBlankPdf, getSampleElements } from './utils/samplePdf';
 import { exportPdfWithElements } from './utils/pdfGenerator';
 import { parsePdfElements } from './utils/pdfParser';
 import { generateStandaloneHtml } from './utils/standaloneHtmlGenerator';
@@ -23,6 +24,7 @@ export default function App() {
 
   // Modals
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState<boolean>(false);
+  const [isAutomationModalOpen, setIsAutomationModalOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -40,114 +42,8 @@ export default function App() {
         setPdfBytes(sampleBytes);
         setTotalPages(1);
 
-        // Pre-place starter sample interactive elements
-        const starterElements: EditorElement[] = [
-          {
-            id: 'tf_nome',
-            pageIndex: 0,
-            type: 'text_field',
-            fieldName: 'Nome_Cognome',
-            defaultValue: 'Mario Rossi',
-            fontSize: 10.5,
-            fontColor: '#0f172a',
-            borderColor: '#3b82f6',
-            backgroundColor: '#ffffff',
-            isMultiline: false,
-            isRequired: true,
-            x: 142,
-            y: 147,
-            width: 142,
-            height: 20,
-          },
-          {
-            id: 'tf_cf',
-            pageIndex: 0,
-            type: 'text_field',
-            fieldName: 'Codice_Fiscale',
-            defaultValue: 'RSSMRA85M01H501Z',
-            fontSize: 10,
-            fontColor: '#0f172a',
-            borderColor: '#3b82f6',
-            backgroundColor: '#ffffff',
-            isMultiline: false,
-            isRequired: true,
-            x: 422,
-            y: 147,
-            width: 132,
-            height: 20,
-          },
-          {
-            id: 'tf_indirizzo',
-            pageIndex: 0,
-            type: 'text_field',
-            fieldName: 'Indirizzo_Residenza',
-            defaultValue: 'Via Roma 42, 20121 Milano (MI)',
-            fontSize: 10,
-            fontColor: '#0f172a',
-            borderColor: '#3b82f6',
-            backgroundColor: '#ffffff',
-            isMultiline: false,
-            isRequired: false,
-            x: 157,
-            y: 182,
-            width: 396,
-            height: 20,
-          },
-          {
-            id: 'rd_presenza',
-            pageIndex: 0,
-            type: 'radio',
-            groupName: 'Modalita_Servizio',
-            value: 'InPresenza',
-            isSelected: true,
-            borderColor: '#1d4ed8',
-            x: 44,
-            y: 254,
-            width: 15,
-            height: 15,
-          },
-          {
-            id: 'rd_remoto',
-            pageIndex: 0,
-            type: 'radio',
-            groupName: 'Modalita_Servizio',
-            value: 'Smartworking',
-            isSelected: false,
-            borderColor: '#334155',
-            x: 264,
-            y: 254,
-            width: 15,
-            height: 15,
-          },
-          {
-            id: 'cb_privacy',
-            pageIndex: 0,
-            type: 'checkbox',
-            fieldName: 'Consenso_GDPR',
-            isChecked: true,
-            borderColor: '#047857',
-            backgroundColor: '#ffffff',
-            x: 42,
-            y: 317,
-            width: 16,
-            height: 16,
-          },
-          {
-            id: 'cb_newsletter',
-            pageIndex: 0,
-            type: 'checkbox',
-            fieldName: 'Consenso_Comunicazioni',
-            isChecked: false,
-            borderColor: '#334155',
-            backgroundColor: '#ffffff',
-            x: 42,
-            y: 339,
-            width: 16,
-            height: 16,
-          },
-        ];
-
-        setElements(starterElements);
+        // Pre-place calibrated sample interactive elements including Dropdown
+        setElements(getSampleElements());
       } catch (err) {
         console.error('Error loading sample pdf:', err);
       }
@@ -209,9 +105,9 @@ export default function App() {
     setPdfBytes(bytes);
     setTotalPages(1);
     setCurrentPage(1);
-    setElements([]);
+    setElements(getSampleElements());
     setSelectedId(null);
-    showToast('Modulo di esempio caricato con sezioni compilabili');
+    showToast('Modulo di esempio caricato con sezioni e campi calibrati');
   };
 
   const handleExportPdf = async (mode: 'interactive' | 'flatten') => {
@@ -520,6 +416,7 @@ export default function App() {
         onLoadSamplePdf={handleLoadSamplePdf}
         onExportPdf={handleExportPdf}
         onDownloadStandaloneHtml={handleDownloadStandaloneHtml}
+        onOpenAutomationModal={() => setIsAutomationModalOpen(true)}
         zoom={zoom}
         onZoomChange={setZoom}
         currentPage={currentPage}
@@ -568,6 +465,17 @@ export default function App() {
         isOpen={isSignatureModalOpen}
         onClose={() => setIsSignatureModalOpen(false)}
         onConfirm={handleConfirmSignature}
+      />
+
+      {/* Automation & Scripting Modal */}
+      <AutomationModal
+        isOpen={isAutomationModalOpen}
+        onClose={() => setIsAutomationModalOpen(false)}
+        elements={elements}
+        onApplyScript={(updatedElements, msg) => {
+          setElements(updatedElements);
+          showToast(msg);
+        }}
       />
 
       {/* Toast Notification */}
