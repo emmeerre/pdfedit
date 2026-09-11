@@ -20,6 +20,10 @@ import {
   Sparkles,
   ChevronDown,
   Edit3,
+  ListFilter,
+  Code2,
+  Square,
+  Shapes,
 } from 'lucide-react';
 
 interface ToolbarProps {
@@ -32,6 +36,7 @@ interface ToolbarProps {
   onLoadSamplePdf: () => void;
   onExportPdf: (mode: 'interactive' | 'flatten') => void;
   onDownloadStandaloneHtml: () => void;
+  onOpenAutomationModal: () => void;
   zoom: number;
   onZoomChange: (zoom: number) => void;
   currentPage: number;
@@ -49,6 +54,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onLoadSamplePdf,
   onExportPdf,
   onDownloadStandaloneHtml,
+  onOpenAutomationModal,
   zoom,
   onZoomChange,
   currentPage,
@@ -131,8 +137,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           </div>
         </div>
 
-        {/* Right: Standalone HTML Download & Export PDF */}
+        {/* Right: Automation Script, Standalone HTML Download & Export PDF */}
         <div className="flex items-center gap-2">
+          {/* Script Automation Modal Button */}
+          <button
+            onClick={onOpenAutomationModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100/90 border border-violet-300 rounded-lg transition-all shadow-2xs hover:shadow-xs cursor-pointer active:scale-95"
+            title="Apri l'editor per scrivere ed eseguire script di automazione (formule, calcoli, JSON, date, maiuscolo)"
+          >
+            <Code2 className="w-4 h-4 text-violet-600" />
+            <span>Automazione Script</span>
+          </button>
+
           {/* Standalone HTML File Button (Direct Download on Click) */}
           <button
             onClick={onDownloadStandaloneHtml}
@@ -265,6 +281,20 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             <span>Radio</span>
           </button>
 
+          {/* Dropdown Menu */}
+          <button
+            onClick={() => onSelectTool('dropdown')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              currentTool === 'dropdown'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-700 hover:bg-slate-200/70'
+            }`}
+            title="Aggiungi menu a tendina (Dropdown/Select) con opzioni multiple"
+          >
+            <ListFilter className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Dropdown</span>
+          </button>
+
           <div className="w-px h-5 bg-slate-200 mx-1"></div>
 
           {/* Text & Whiteout Group */}
@@ -277,13 +307,41 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             onClick={() => onSelectTool('edit_existing_text')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
               currentTool === 'edit_existing_text'
-                ? 'bg-blue-600 text-white shadow-xs'
+                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'text-slate-700 hover:bg-slate-200/70'
             }`}
             title="Clicca su qualsiasi testo o parola già presente nel PDF per modificarla direttamente"
           >
             <Edit3 className="w-3.5 h-3.5 text-blue-500" />
             <span>Edita Testo Presente</span>
+          </button>
+
+          {/* Edit Existing Decorations / Lines & Boxes */}
+          <button
+            onClick={() => onSelectTool('edit_existing_decorations')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+              currentTool === 'edit_existing_decorations'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'text-slate-700 hover:bg-slate-200/70'
+            }`}
+            title="Rileva ed edita linee divisorie, riquadri decorativi e grafiche già presenti nel PDF"
+          >
+            <Square className="w-3.5 h-3.5 text-purple-600" />
+            <span>Edita Linee e Riquadri</span>
+          </button>
+
+          {/* New Shape (Box, Line, Circle) */}
+          <button
+            onClick={() => onSelectTool('shape')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              currentTool === 'shape'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'text-slate-700 hover:bg-slate-200/70'
+            }`}
+            title="Disegna una nuova forma geometrica (Riquadro, Linea divisoria o Cerchio)"
+          >
+            <Shapes className="w-3.5 h-3.5 text-teal-600" />
+            <span>Forme / Riquadri</span>
           </button>
 
           {/* Free Text */}

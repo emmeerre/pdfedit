@@ -1,9 +1,10 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { EditorElement, ToolType, ImageElement } from '../types';
-import { RotateCw, Edit3, Trash2, FlipHorizontal, Upload } from 'lucide-react';
+import { RotateCw, Edit3, Trash2, FlipHorizontal, Upload, ChevronDown, Square } from 'lucide-react';
 import { detectPdfFont, getCssFontFamily } from '../utils/fontHelper';
 import { extractImagesFromPdfPage } from '../utils/pdfImageExtractor';
+import { extractDecorationsFromPdfPage, ExtractedDecorationItem } from '../utils/pdfDecorationExtractor';
 
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
@@ -64,6 +65,7 @@ export const PageViewer: React.FC<PageViewerProps> = ({
     height: 841.89,
   });
   const [extractedTexts, setExtractedTexts] = useState<ExtractedTextItem[]>([]);
+  const [extractedDecorations, setExtractedDecorations] = useState<ExtractedDecorationItem[]>([]);
   const [editingInlineId, setEditingInlineId] = useState<string | null>(null);
 
   // Dragging, Resizing & Continuous Rotating state
@@ -110,6 +112,7 @@ export const PageViewer: React.FC<PageViewerProps> = ({
         ctx.fillRect(0, 0, w, h);
         setPageSize({ width: 595.28, height: 841.89 });
         setExtractedTexts([]);
+        setExtractedDecorations([]);
         return;
       }
 
@@ -249,6 +252,16 @@ export const PageViewer: React.FC<PageViewerProps> = ({
         } catch (imgScanErr) {
           console.warn('PDF image extraction scan note:', imgScanErr);
         }
+
+        // Automatically extract vector decorations (lines, boxes, rules) for "Edita Linee e Riquadri"
+        try {
+          const pageDecs = await extractDecorationsFromPdfPage(page, baseViewport.width, baseViewport.height);
+          if (!isCancelled) {
+            setExtractedDecorations(pageDecs);
+          }
+        } catch (decErr) {
+          console.warn('PDF decorations scan note:', decErr);
+        }
       } catch (err: any) {
         if (err?.name === 'RenderingCancelledException') {
           return;
@@ -309,6 +322,46 @@ export const PageViewer: React.FC<PageViewerProps> = ({
     onAddElement(newTextEl);
     onSelectElement(txtId);
     setEditingInlineId(txtId);
+    onToolUsed();
+  };
+
+  // Handle clicking an existing decoration (line, rectangle, card) to edit it
+  const handleEditOriginalDecoration = (item: ExtractedDecorationItem) => {
+    const pageIdx = currentPage - 1;
+    const shapeId = `shape_${Date.now()}`;
+
+    // For thin lines, give an easily clickable/draggable interactive height (e.g. 8px)
+    const isHLine = item.type === 'line' && item.width >= item.height;
+    const isVLine = item.type === 'line' && item.height > item.width;
+    const initialH = isHLine ? Math.max(item.height, 8) : item.height;
+    const initialW = isVLine ? Math.max(item.width, 8) : item.width;
+    const initialY = isHLine ? item.y - (initialH - item.height) / 2 : item.y;
+    const initialX = isVLine ? item.x - (initialW - item.width) / 2 : item.x;
+
+    const newShapeEl: EditorElement = {
+      id: shapeId,
+      pageIndex: pageIdx,
+      type: 'shape',
+      shapeType: item.type,
+      x: Math.round(initialX),
+      y: Math.round(initialY),
+      width: Math.round(initialW),
+      height: Math.round(initialH),
+      strokeColor: item.strokeColor || '#334155',
+      strokeWidth: item.strokeWidth || 1,
+      strokeDash: 'solid',
+      fillColor: item.type === 'line' ? 'transparent' : (item.fillColor || 'transparent'),
+      borderRadius: item.type === 'circle' ? 9999 : 0,
+      isOriginalPdfDecoration: true,
+      originalX: item.x,
+      originalY: item.y,
+      originalWidth: item.width,
+      originalHeight: item.height,
+      originalRotation: 0,
+      rotation: 0,
+    };
+    onAddElement(newShapeEl);
+    onSelectElement(shapeId);
     onToolUsed();
   };
 
@@ -426,6 +479,31 @@ export const PageViewer: React.FC<PageViewerProps> = ({
         break;
       }
 
+      case 'dropdown': {
+        const dd: EditorElement = {
+          id: newId,
+          pageIndex: pageIdx,
+          type: 'dropdown',
+          fieldName: `Menu_${elements.length + 1}`,
+          options: ['Opzione 1', 'Opzione 2', 'Opzione 3'],
+          defaultValue: 'Opzione 1',
+          fontSize: 10,
+          fontColor: '#0f172a',
+          borderColor: '#3b82f6',
+          backgroundColor: '#ffffff',
+          isRequired: false,
+          x: clickX,
+          y: clickY,
+          width: 150,
+          height: 22,
+          rotation: 0,
+        };
+        onAddElement(dd);
+        onSelectElement(dd.id);
+        onToolUsed();
+        break;
+      }
+
       case 'text': {
         const tx: EditorElement = {
           id: newId,
@@ -487,6 +565,29 @@ export const PageViewer: React.FC<PageViewerProps> = ({
         onToolUsed();
         break;
       }
+
+      case 'shape': {
+        const sh: EditorElement = {
+          id: newId,
+          pageIndex: pageIdx,
+          type: 'shape',
+          shapeType: 'rectangle',
+          strokeColor: '#2563eb',
+          strokeWidth: 2,
+          strokeDash: 'solid',
+          fillColor: '#eff6ff',
+          borderRadius: 4,
+          x: clickX,
+          y: clickY,
+          width: 160,
+          height: 80,
+          rotation: 0,
+        };
+        onAddElement(sh);
+        onSelectElement(sh.id);
+        onToolUsed();
+        break;
+      }
     }
   };
 
@@ -510,9 +611,11 @@ export const PageViewer: React.FC<PageViewerProps> = ({
           y: Math.round(newY),
         });
       } else if (dragState.action === 'resize') {
-        const minSize = target.type === 'checkbox' || target.type === 'radio' ? 12 : 16;
-        const newW = Math.max(minSize, dragState.startElW + dx);
-        const newH = Math.max(minSize, dragState.startElH + dy);
+        const isShapeLine = target.type === 'shape' && (target as any).shapeType === 'line';
+        const minW = isShapeLine && target.width >= target.height ? 10 : (target.type === 'checkbox' || target.type === 'radio' ? 12 : 16);
+        const minH = isShapeLine && target.height <= target.width ? 2 : (target.type === 'checkbox' || target.type === 'radio' ? 12 : 16);
+        const newW = Math.max(minW, dragState.startElW + dx);
+        const newH = Math.max(minH, dragState.startElH + dy);
         onUpdateElement({
           ...target,
           width: Math.round(newW),
@@ -645,35 +748,83 @@ export const PageViewer: React.FC<PageViewerProps> = ({
           </div>
         )}
 
-        {/* Whiteout patches covering original background footprint of moved/modified PDF images */}
+        {/* Existing PDF Decorations Detection Layer (Active when 'edit_existing_decorations' tool is selected) */}
+        {currentTool === 'edit_existing_decorations' && (
+          <div className="absolute inset-0 z-30 pointer-events-auto bg-purple-950/5">
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-xs px-3.5 py-1.5 rounded-full shadow-lg flex items-center gap-2 pointer-events-none animate-pulse">
+              <Square className="w-3.5 h-3.5" />
+              <span>Clicca su qualsiasi linea, riquadro o forma del PDF per modificarla</span>
+            </div>
+            {extractedDecorations.map((item) => {
+              const isHLine = item.type === 'line' && item.width >= item.height;
+              const isVLine = item.type === 'line' && item.height > item.width;
+              // Provide an accessible, comfortable hit area of at least 18px for lines so clicks never miss!
+              const hitHeight = isHLine ? Math.max(item.height * zoom, 18) : Math.max(item.height * zoom, 12);
+              const hitWidth = isVLine ? Math.max(item.width * zoom, 18) : Math.max(item.width * zoom, 12);
+              const renderTop = isHLine ? (item.y * zoom) - (hitHeight - item.height * zoom) / 2 : item.y * zoom;
+              const renderLeft = isVLine ? (item.x * zoom) - (hitWidth - item.width * zoom) / 2 : item.x * zoom;
+
+              return (
+                <div
+                  key={item.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEditOriginalDecoration(item);
+                  }}
+                  title={`Modifica ${item.title}: ${item.width}x${item.height}pt`}
+                  style={{
+                    left: `${renderLeft}px`,
+                    top: `${renderTop}px`,
+                    width: `${hitWidth}px`,
+                    height: `${hitHeight}px`,
+                  }}
+                  className="absolute cursor-pointer flex items-center justify-center border-2 border-purple-500/80 bg-purple-500/15 hover:border-purple-600 hover:bg-purple-500/35 rounded-xs transition-all group z-30"
+                >
+                  {isHLine && (
+                    <div
+                      style={{ height: `${Math.max(2, item.height * zoom)}px` }}
+                      className="w-full bg-purple-600 shadow-[0_0_6px_rgba(147,51,234,0.8)]"
+                    />
+                  )}
+                  {isVLine && (
+                    <div
+                      style={{ width: `${Math.max(2, item.width * zoom)}px` }}
+                      className="h-full bg-purple-600 shadow-[0_0_6px_rgba(147,51,234,0.8)]"
+                    />
+                  )}
+                  <span className="opacity-0 group-hover:opacity-100 absolute -top-6 left-1/2 -translate-x-1/2 bg-purple-700 text-white text-[10px] font-medium px-2 py-0.5 rounded shadow-lg whitespace-nowrap pointer-events-none z-40">
+                    {item.title} (clicca per modificare)
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Whiteout patches covering original background footprint of moved/modified PDF images and decorations */}
         <div className="absolute inset-0 pointer-events-none z-0">
           {pageElements.map((el) => {
-            if (el.type === 'image' && el.isOriginalPdfImage) {
-              const origX = el.originalX ?? el.x;
-              const origY = el.originalY ?? el.y;
-              const origW = el.originalWidth ?? el.width;
-              const origH = el.originalHeight ?? el.height;
-              const isMoved =
-                Math.abs(el.x - origX) > 1 ||
-                Math.abs(el.y - origY) > 1 ||
-                Math.abs(el.width - origW) > 1 ||
-                Math.abs(el.height - origH) > 1;
-              if (isMoved) {
-                return (
-                  <div
-                    key={`orig_whiteout_${el.id}`}
-                    style={{
-                      left: `${origX * zoom}px`,
-                      top: `${origY * zoom}px`,
-                      width: `${origW * zoom}px`,
-                      height: `${origH * zoom}px`,
-                      transform: `rotate(${el.originalRotation || 0}deg)`,
-                      transformOrigin: 'center center',
-                    }}
-                    className="absolute bg-white border border-dashed border-slate-300 pointer-events-none shadow-xs"
-                  />
-                );
-              }
+            if ((el.type === 'image' && el.isOriginalPdfImage) || (el.type === 'shape' && el.isOriginalPdfDecoration)) {
+              const origX = (el as any).originalX ?? el.x;
+              const origY = (el as any).originalY ?? el.y;
+              const origW = (el as any).originalWidth ?? el.width;
+              const origH = (el as any).originalHeight ?? el.height;
+              const isThinLine = origH <= 3;
+              const padY = isThinLine ? 1.5 : 0;
+              return (
+                <div
+                  key={`orig_whiteout_${el.id}`}
+                  style={{
+                    left: `${origX * zoom}px`,
+                    top: `${(origY - padY) * zoom}px`,
+                    width: `${origW * zoom}px`,
+                    height: `${(origH + padY * 2) * zoom}px`,
+                    transform: `rotate(${(el as any).originalRotation || 0}deg)`,
+                    transformOrigin: 'center center',
+                  }}
+                  className="absolute bg-white pointer-events-none"
+                />
+              );
             }
             return null;
           })}
@@ -765,6 +916,34 @@ export const PageViewer: React.FC<PageViewerProps> = ({
                   </div>
                 )}
 
+                {el.type === 'dropdown' && (
+                  <div
+                    style={{
+                      backgroundColor: el.backgroundColor || '#ffffff',
+                      borderColor: el.borderColor || '#3b82f6',
+                    }}
+                    className="w-full h-full border rounded-xs px-1.5 py-0.5 flex items-center justify-between overflow-hidden shadow-2xs select-none"
+                  >
+                    <span
+                      style={{
+                        fontSize: `${(el.fontSize || 10) * zoom}px`,
+                        color: el.fontColor || '#0f172a',
+                      }}
+                      className="truncate font-sans flex-1"
+                    >
+                      {el.defaultValue || (el.options && el.options[0]) || (
+                        <span className="text-slate-400 italic text-[10px]">
+                          [{el.fieldName}]
+                        </span>
+                      )}
+                    </span>
+                    <ChevronDown
+                      style={{ width: `${12 * zoom}px`, height: `${12 * zoom}px` }}
+                      className="text-slate-500 shrink-0 ml-1"
+                    />
+                  </div>
+                )}
+
                 {el.type === 'text' && (
                   <div
                     style={{
@@ -829,6 +1008,39 @@ export const PageViewer: React.FC<PageViewerProps> = ({
                     style={{ backgroundColor: el.color || 'rgba(254, 240, 138, 0.5)' }}
                     className="w-full h-full rounded-xs mix-blend-multiply"
                   />
+                )}
+
+                {el.type === 'shape' && (
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      boxSizing: 'border-box',
+                      borderRadius: el.shapeType === 'circle' ? '50%' : `${(el.borderRadius || 0) * zoom}px`,
+                      backgroundColor: el.shapeType === 'line' ? 'transparent' : (el.fillColor === 'transparent' ? 'transparent' : el.fillColor),
+                      borderStyle: el.shapeType === 'line' ? 'none' : (el.strokeDash === 'dashed' ? 'dashed' : el.strokeDash === 'dotted' ? 'dotted' : 'solid'),
+                      borderColor: el.strokeColor || '#334155',
+                      borderWidth: el.shapeType === 'line' ? '0' : `${Math.max(0, (el.strokeWidth ?? 1) * zoom)}px`,
+                    }}
+                    className="w-full h-full relative pointer-events-none"
+                  >
+                    {el.shapeType === 'line' && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: 0,
+                          top: el.height <= el.width ? '50%' : 0,
+                          width: el.height <= el.width ? '100%' : `${Math.max(1, (el.strokeWidth || 1) * zoom)}px`,
+                          height: el.height <= el.width ? `${Math.max(1, (el.strokeWidth || 1) * zoom)}px` : '100%',
+                          transform: el.height <= el.width ? 'translateY(-50%)' : 'none',
+                          backgroundColor: el.strokeDash && el.strokeDash !== 'solid' ? 'transparent' : (el.strokeColor || '#334155'),
+                          borderTop: el.strokeDash && el.strokeDash !== 'solid'
+                            ? `${Math.max(1, (el.strokeWidth || 1) * zoom)}px ${el.strokeDash} ${el.strokeColor || '#334155'}`
+                            : undefined,
+                        }}
+                      />
+                    )}
+                  </div>
                 )}
 
                 {(el.type === 'signature' || el.type === 'image') && (

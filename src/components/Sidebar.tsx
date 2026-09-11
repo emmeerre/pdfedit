@@ -11,6 +11,7 @@ import {
   Image as ImageIcon,
   Highlighter,
   Trash2,
+  ListFilter,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -38,6 +39,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         return <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />;
       case 'radio':
         return <CircleDot className="w-3.5 h-3.5 text-purple-600" />;
+      case 'dropdown':
+        return <ListFilter className="w-3.5 h-3.5 text-indigo-600" />;
       case 'text':
         return <Type className="w-3.5 h-3.5 text-amber-600" />;
       case 'whiteout':
@@ -59,6 +62,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         return el.fieldName || 'Casella Checkbox';
       case 'radio':
         return `${el.groupName}: ${el.value}`;
+      case 'dropdown':
+        return el.fieldName || 'Menu a Tendina';
       case 'text':
         return el.text.slice(0, 18) + (el.text.length > 18 ? '...' : '') || 'Testo';
       case 'whiteout':
